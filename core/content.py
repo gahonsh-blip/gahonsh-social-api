@@ -4,8 +4,9 @@ The post of the day is deterministic: same date always gives the same headline,
 so a re-run can never double-post. A dated entry in content_plan.json always
 wins over the weekday rhythm.
 
-Optional: AI_WRITE=yes asks a free text model (Pollinations, no key) to rewrite
-the caption. If that fails, the built-in copy is used, so a run never breaks.
+Optional: AI_WRITE=yes (or --ai) asks a free text model (Pollinations, no key) to
+rewrite the caption. If that fails, the built-in copy is used, so a run never
+breaks.
 """
 import json
 import random
@@ -107,7 +108,7 @@ def build_post(day: date, ai_write=False):
 
     caption = f"{headline}.\n\n{body}\n\nTell us what you need and we will scope it honestly.\n\n{SITE}\n\n{TAGS}"
 
-    if ai_write:
+    if ai_write or config.env("AI_WRITE", "").lower() in ("1", "yes", "true"):
         caption = _ai_caption(headline, body) or caption
 
     voice = f"{headline}. {body} Get a fixed quote in two to four days at gahonsh dot b l i p dot github dot i o."
