@@ -33,6 +33,9 @@ def ai_art(prompt, size=(1080, 1350), seed=None, out_path=None):
         with urllib.request.urlopen(url, timeout=120) as r:
             raw = r.read()
         art = Image.open(io.BytesIO(raw)).convert("RGB")
+        # the free model stamps a small watermark near the bottom edge; crop it out
+        aw, ah = art.size
+        art = art.crop((0, 0, aw, int(ah * 0.93)))
         art = art.resize((w, h), Image.LANCZOS)
         if out_path:
             art.save(out_path, "JPEG", quality=92)
