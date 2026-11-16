@@ -1,0 +1,17 @@
+{
+  "_note": "Dated entries override the weekday rhythm. Add your own days here.",
+  "days": {
+    "2026-11-17": {
+      "theme": "Real estate websites",
+      "headline": "A property site where enquiries actually arrive",
+      "body": "Floor plans, gallery, price list and one WhatsApp button that works on a slow phone.",
+      "prompt": "modern apartment building exterior in india at golden hour, clean architecture photography"
+    },
+    "2026-11-18": {
+      "theme": "Billing and GST",
+      "headline": "GST invoices generated in one click",
+      "body": "Item, rate, tax split and a printable PDF that your accountant accepts without a fight.",
+      "prompt": "accountant desk with invoice papers and calculator, warm office light, top down photo"
+    }
+  }
+}

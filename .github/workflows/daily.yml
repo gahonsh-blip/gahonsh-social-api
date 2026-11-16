@@ -1,0 +1,81 @@
+name: daily-social
+
+# 08:30 IST = 03:00 UTC. GitHub's free scheduler runs on GitHub's own machines,
+# so the posts go out even when your laptop and phone are both off.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "dry run (build media, publish nothing)"
+        required: false
+        default: "false"
+
+concurrency:
+  group: daily-social
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu
+
+      - name: Python packages
+        run: pip install -q -r requirements.txt
+
+      - name: Build and publish
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+          CHANNELS: ${{ vars.CHANNELS }}
+          AI_WRITE: ${{ vars.AI_WRITE }}
+          GITHUB_TOKEN: ${{ secrets.MEDIA_GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          GITHUB_BRANCH: ${{ github.ref_name }}
+          GITHUB_PAGES_URL: ${{ vars.GITHUB_PAGES_URL }}
+          META_PAGE_TOKEN: ${{ secrets.META_PAGE_TOKEN }}
+          META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
+          META_IG_ID: ${{ secrets.META_IG_ID }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BLUESKY_HANDLE: ${{ secrets.BLUESKY_HANDLE }}
+          BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+          MASTODON_BASE_URL: ${{ vars.MASTODON_BASE_URL }}
+          MASTODON_TOKEN: ${{ secrets.MASTODON_TOKEN }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          DEVTO_API_KEY: ${{ secrets.DEVTO_API_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python3 social.py --dry-run --only telegram
+          else
+            python3 social.py
+          fi
+
+      - name: Remember what was posted
+        run: |
+          if [ -n "$(git status --porcelain state/ media/)" ]; then
+            git config user.name "gahonsh-autopilot"
+            git config user.email "gahonsh@gmail.com"
+            git add state/ media/ || true
+            git commit -m "daily: $(date -u +%F)" || true
+            git push || true
+          fi
