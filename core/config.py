@@ -13,7 +13,7 @@ ENV_CANDIDATES = [
 ]
 
 # Which platforms are enabled by default (comma separated in CHANNELS).
-DEFAULT_CHANNELS = "facebook,instagram,telegram,bluesky,mastodon,devto"
+DEFAULT_CHANNELS = "facebook,instagram,youtube,telegram,bluesky,mastodon,devto"
 
 # Platforms this project can publish to.
 KNOWN_CHANNELS = [

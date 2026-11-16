@@ -1,74 +1,66 @@
-"""YouTube Shorts upload with a saved OAuth refresh token.
+"""YouTube Shorts, the route that actually publishes publicly for free.
 
-Create the token once with auth/youtube_oauth.py. Note the Google rule: while
-the Cloud project is unverified, uploads from it stay PRIVATE. The owner's own
-App Script route (in the previous setup) avoids that, so this publisher is
-optional and reports the visibility it asked for.
+The YouTube Data API from an unverified Google Cloud project can only upload
+private videos, so this publisher does not touch the API. Instead it uploads the
+Short to public hosting and refreshes https://gahonsh-blip.github.io/social/daily.json,
+which the owner's own Google Apps Script reads once a day and uploads as a
+public Short. Nothing here needs a password.
+
+Needs: GITHUB_TOKEN (repo scope, can write gahonsh-blip.github.io),
+      MEDIA_HOST_REPO for the video (defaults to this project's own Pages repo).
 """
+import base64
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from core import config
+from core import config, host
 from core.http import request
 
-TOKEN_URL = "https://oauth2.googleapis.com/token"
-UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status"
+MANIFEST_REPO = "gahonsh-blip/gahonsh-blip.github.io"
+MANIFEST_PATH = "social/daily.json"
+MANIFEST_URL = "https://gahonsh-blip.github.io/social/daily.json"
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
-def access_token():
-    refresh = config.env("YOUTUBE_REFRESH_TOKEN")
-    cid = config.env("GOOGLE_CLIENT_ID")
-    secret = config.env("GOOGLE_CLIENT_SECRET")
-    if not (refresh and cid and secret):
-        return None
-    status, body = request("POST", TOKEN_URL, data={
-        "client_id": cid, "client_secret": secret,
-        "refresh_token": refresh, "grant_type": "refresh_token"})
-    return (body or {}).get("access_token") if isinstance(body, dict) else None
+def _put_manifest(token, payload):
+    api = f"https://api.github.com/repos/{MANIFEST_REPO}/contents/{MANIFEST_PATH}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    _, cur = request("GET", api, headers=headers)
+    body = dict(payload)
+    body["message"] = f"social: daily Short {payload.get('date')}"
+    body["content"] = base64.b64encode(
+        (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode()
+    ).decode()
+    if isinstance(cur, dict) and cur.get("sha"):
+        body["sha"] = cur["sha"]
+    return request("PUT", api, json_body=body, headers=headers)
 
 
 def post(post, media, dry_run=False):
     if not media.get("video"):
-        return {"ok": False, "skipped": True, "error": "no video for YouTube"}
+        return {"ok": False, "skipped": True, "error": "no video rendered"}
     if dry_run:
         return {"ok": True, "dry_run": True}
 
-    token = access_token()
+    token = config.env("GITHUB_TOKEN")
     if not token:
-        return {"ok": False, "skipped": True,
-                "error": "YOUTUBE_REFRESH_TOKEN / GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing"}
+        return {"ok": False, "skipped": True, "error": "GITHUB_TOKEN missing (needed to refresh the manifest)"}
 
-    privacy = config.env("YOUTUBE_PRIVACY", "public")
-    meta = {
-        "snippet": {
-            "title": post["headline"][:95],
-            "description": f"{post['body']}\n\n{config.env('SITE_URL', 'https://gahonsh-blip.github.io')}",
-            "tags": ["software", "india", "flutter", "nodejs", "freelance"],
-            "categoryId": "28",
-        },
-        "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False},
+    video_url = media.get("video_url") or host.upload(media["video"], remote_dir="media")
+    if not video_url:
+        return {"ok": False, "error": "could not host the Short publicly (set GITHUB_REPO / GITHUB_PAGES_URL)"}
+
+    manifest = {
+        "date": post["date"],
+        "title": post["headline"][:95],
+        "description": f"{post['body']}\n\n{config.env('SITE_URL', 'https://gahonsh-blip.github.io')}",
+        "tags": ["software", "india", "flutter", "nodejs", "freelance"],
+        "video_url": video_url,
+        "duration_seconds": media.get("duration"),
+        "updated": datetime.now(IST).isoformat(timespec="seconds"),
     }
-    status, res = request(
-        "POST", UPLOAD_URL, json_body=meta,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "X-Upload-Content-Type": "video/mp4",
-            "X-Upload-Content-Length": str(Path(media["video"]).stat().st_size),
-        },
-    )
-    return {"ok": False, "error": f"resumable init returned {status}; use the Apps Script route or complete OAuth"}
-
-
-def upload_file(session_uri, video_path, token):
-    """PUT the bytes into the resumable session (used once init succeeds)."""
-    import urllib.request
-
-    data = Path(video_path).read_bytes()
-    req = urllib.request.Request(
-        session_uri, data=data, method="PUT",
-        headers={"Authorization": f"Bearer {token}",
-                 "Content-Type": "video/mp4",
-                 "Content-Length": str(len(data))},
-    )
-    with urllib.request.urlopen(req, timeout=900) as r:
-        return json.loads(r.read().decode())
+    status, body = _put_manifest(token, manifest)
+    if status not in (200, 201):
+        return {"ok": False, "error": f"manifest update {status}: {str(body)[:180]}"}
+    return {"ok": True, "link": MANIFEST_URL, "note": "queued for the owner's Apps Script upload"}

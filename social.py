@@ -29,7 +29,7 @@ OUT = ROOT / "out"
 KEYS = {
     "facebook": ["META_PAGE_TOKEN", "META_PAGE_ID"],
     "instagram": ["META_PAGE_TOKEN", "META_IG_ID"],
-    "youtube": ["YOUTUBE_REFRESH_TOKEN", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+    "youtube": ["GITHUB_TOKEN"],
     "linkedin": ["LINKEDIN_ACCESS_TOKEN"],
     "telegram": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
     "bluesky": ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"],
@@ -39,13 +39,28 @@ KEYS = {
     "blogger": ["BLOGGER_BLOG_ID", "GOOGLE_REFRESH_TOKEN"],
 }
 
+# Facebook and Instagram are proven with image posts. Reels/video are opt-in
+# because Meta fetches the file itself and can reject a hosted MP4.
+VIDEO_CHANNELS_FLAG = {"facebook": "USE_VIDEO_FB", "instagram": "USE_VIDEO_IG"}
+
 
 def doctor():
     print(f"{'channel':10} {'keys':6} ready")
     for name, keys in KEYS.items():
         ready = config.has(*keys)
         print(f"{name:10} {'ok' if ready else 'MISS':6} {'yes' if ready else 'no'}")
-    print(f"\nmedia hosting (needed by Instagram): {'ok' if config.has('GITHUB_TOKEN', 'GITHUB_REPO', 'GITHUB_PAGES_URL') else 'MISS'}")
+    hosting = config.has("GITHUB_TOKEN", "GITHUB_REPO", "GITHUB_PAGES_URL")
+    print(f"\nmedia hosting (needed by Instagram): {'ok' if hosting else 'MISS'}")
+
+
+def _channel_media(channel, media):
+    """Give each channel the media shape it can actually handle."""
+    m = dict(media)
+    flag = VIDEO_CHANNELS_FLAG.get(channel)
+    if flag and config.env(flag, "").lower() not in ("1", "yes", "true"):
+        m.pop("video", None)
+        m.pop("video_url", None)
+    return m
 
 
 def main():
@@ -77,15 +92,12 @@ def main():
     media = {"caption": post["caption"], "short": post["short"]}
     card_path = image.card(post, out_path=work / "card.jpg", use_ai=not args.no_ai)
     media["image"] = card_path
-    print(f"card: {card_path}", file=sys.stderr)
 
     if not args.no_video:
         clip = video.build(post, work, lang=args.lang, use_ai=not args.no_ai)
         if clip.get("ok"):
             media["video"] = clip["path"]
-            print(f"short: {clip['path']} ({clip['duration']}s, {clip['size_kb']} KB)", file=sys.stderr)
-        else:
-            print(f"short failed: {clip.get('error')}", file=sys.stderr)
+            media["duration"] = clip["duration"]
 
     if not args.dry_run:
         url = host.upload(card_path, remote_dir="media")
@@ -106,7 +118,7 @@ def main():
             results[channel] = {"ok": True, "skipped": True, "reason": "already posted today"}
             continue
         try:
-            res = fn(post, media, dry_run=args.dry_run)
+            res = fn(post, _channel_media(channel, media), dry_run=args.dry_run)
         except Exception as e:  # a broken channel must never stop the rest
             res = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         results[channel] = res
