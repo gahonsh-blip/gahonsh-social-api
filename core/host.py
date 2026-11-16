@@ -8,6 +8,7 @@ Needs: GITHUB_TOKEN (repo scope), GITHUB_REPO (owner/name), GITHUB_BRANCH,
 and GITHUB_PAGES_URL (e.g. https://owner.github.io/repo).
 """
 import base64
+import hashlib
 from pathlib import Path
 
 from . import config
@@ -24,7 +25,10 @@ def upload(path, remote_dir="media"):
         return None
 
     path = Path(path)
-    name = f"{path.stem}-{int(path.stat().st_mtime)}-{abs(hash(path.name)) % 10000}{path.suffix}"
+    # hash() is salted per process, so it gave the same file a new remote name on
+    # every run and the "already exists, same bytes" reply could never be reused.
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:10]
+    name = f"{path.stem}-{int(path.stat().st_mtime)}-{digest}{path.suffix}"
     remote = f"{remote_dir.strip('/')}/{name}"
     api = f"https://api.github.com/repos/{repo}/contents/{remote}"
     payload = {
